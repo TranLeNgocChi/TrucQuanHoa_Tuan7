@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        .chart-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .chart {
+            margin: 20px;
+            text-align: center;
+        }
+        .tooltip {
+            position: absolute;
+            text-align: center;
+            background: lightgray;
+            padding: 8px;
+            font-size: 14px;
+            border-radius: 4px;
+            pointer-events: none;
+            visibility: hidden;
+        }
+        h3 {
+            font-size: 16px;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="chart-container" id="charts"></div>
+    <div class="tooltip" id="tooltip"></div>
+    <script>
+        d3.csv("data_ggsheet.csv").then(data => {
+            console.log("Dữ liệu đọc từ CSV:", data);
+           
+            // Chuyển đổi dữ liệu
+            data.forEach(d => {
+                d.T = d3.timeFormat("%m")(new Date(d["Thời gian tạo đơn"]));
+                d["Thành tiền"] = +d["Thành tiền"];
+            });
+
+
+            // Tổng mức chi tiêu theo mã khách hàng
+            const chiTieuKhachHang = d3.rollup(
+                data,
+                v => d3.sum(v, d => d["Thành tiền"]),
+                d => d["Mã khách hàng"]
+            );
+
+
+            let chiTieuArray = Array.from(chiTieuKhachHang, ([khachHang, tongTien]) => ({
+                khachHang, tongTien
+            }));
+
+
+            // Xác định ngưỡng bin
+            const maxValue = d3.max(chiTieuArray, d => d.tongTien);
+            const thresholds = d3.range(0, maxValue + 50000, 50000);
+            thresholds[0] = 0; // Đảm bảo bin đầu tiên từ 0
+
+
+            // Tạo bins
+            const bins = d3.bin()
+                .domain([0, maxValue])  // Định nghĩa miền dữ liệu từ 0
+                .thresholds(thresholds) // Sử dụng thresholds cập nhật
+                (chiTieuArray.map(d => d.tongTien));
+
+
+            // Thiết lập kích thước biểu đồ
+            const width = 1400, height = 500, margin = { top: 50, right: 50, bottom: 80, left: 120 };
+
+
+            // Thang đo trục X
+            const x = d3.scaleLinear()
+                .domain([0, maxValue])
+                .range([margin.left, width - margin.right]);
+
+
+            // Thang đo trục Y
+            const y = d3.scaleLinear()
+                .domain([0, d3.max(bins, d => d.length)])
+                .range([height - margin.bottom, margin.top]);
+
+
+            // Tạo container cho biểu đồ
+            const container = d3.select("#charts").append("div").attr("class", "chart");
+            container.append("h3").text("Phân phối mức chi trả của khách hàng");
+
+
+            const svg = container.append("svg")
+                .attr("width", width)
+                .attr("height", height);
+
+
+                const tickValues = d3.range(0, maxValue + 50000, 50000); // Các tick cách nhau 50K
+
+
+            svg.append("g")
+                .attr("transform", `translate(0,${height - margin.bottom})`)
+                .call(d3.axisBottom(x)
+                    .tickValues(tickValues) // Đặt giá trị cụ thể cho các tick
+                    .tickFormat(d => `${d / 1000}K`) // Hiển thị theo đơn vị K
+                )
+                .selectAll("text") // Chọn tất cả nhãn trên trục X
+                .style("text-anchor", "end") // Canh lề phải
+                .attr("transform", "rotate(-90)");
+            // Vẽ trục Y
+            svg.append("g")
+                .attr("transform", `translate(${margin.left},0)`)
+                .call(d3.axisLeft(y).tickFormat(d => d >= 1000 ? `${(d / 1e3).toFixed(1)}K` : d));
+
+
+            // Tooltip
+            const tooltip = d3.select("#tooltip");
+
+
+            // Vẽ cột histogram
+            svg.selectAll("rect")
+                .data(bins)
+                .enter().append("rect")
+                .attr("x", d => x(d.x0))
+                .attr("y", d => y(d.length))
+                .attr("width", d => x(d.x1) - x(d.x0) - 1)
+                .attr("height", d => height - margin.bottom - y(d.length))
+                .attr("fill", "steelblue")
+                .on("mouseover", (event, d) => {
+                   tooltip.style("visibility", "visible")
+                        .html(`<strong>Đã chi tiêu từ ${d.x0.toLocaleString()} đến ${d.x1.toLocaleString()}</strong> <br>` +
+                              `<strong>Số lượng KH:</strong> ${d.length}`)
+                        .style("top", `${event.pageY - 10}px`)
+                        .style("left", `${event.pageX + 10}px`);
+                })
+                .on("mousemove", event => {
+                    tooltip.style("top", `${event.pageY - 10}px`)
+                           .style("left", `${event.pageX + 10}px`);
+                })
+                .on("mouseout", () => {
+                    tooltip.style("visibility", "hidden");
+                });
+        });
+    </script>
+</body>
+</html> 

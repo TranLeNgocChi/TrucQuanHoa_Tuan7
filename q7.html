@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; font-size: 12px; }
+        .label { font-size: 10px; fill: black; }
+        .tooltip {
+            position: absolute;
+            text-align: left;
+            padding: 4px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            border-radius: 5px;
+            pointer-events: none;
+            font-size: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h3 style="text-align:center; font-size: 18px;">
+        Xác suất bán hàng theo Nhóm hàng
+    </h3>
+    <svg id="chart"></svg>
+    <div id="tooltip" class="tooltip" style="opacity: 0;"></div>
+   
+    <script>
+        d3.csv("data_ggsheet.csv").then(data => {
+            console.log("Dữ liệu đã đọc:", data);
+
+            const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
+
+            data.forEach(d => {
+                d.NhomHangFull = `[${d["Mã nhóm hàng"]}] ${d["Tên nhóm hàng"]}`;
+            });
+
+            const groupedData = d3.rollups(
+                data,
+                v => new Set(v.map(d => d["Mã đơn hàng"])).size,
+                d => d.NhomHangFull
+            );
+
+            const totalOrders = new Set(data.map(d => d["Mã đơn hàng"])).size;
+
+            const processedData = groupedData.map(([NhomHangFull, SoDonHang]) => ({
+                NhomHangFull,
+                SoDonHang,
+                XacSuat: SoDonHang / totalOrders
+            })).sort((a, b) => b.XacSuat - a.XacSuat);
+
+            const margin = {top: 20, right: 20, bottom: 40, left: 100},
+            width = 800 - margin.left - margin.right,
+            height = 400 - margin.top - margin.bottom;
+
+            const svg = d3.select("#chart")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom);
+
+            const x = d3.scaleLinear()
+                .domain([0, d3.max(processedData, d => d.XacSuat)])
+                .range([margin.left, width]);
+
+            const y = d3.scaleBand()
+                .domain(processedData.map(d => d.NhomHangFull))
+                .range([margin.top, height])
+                .padding(0.3);
+
+            const tooltip = d3.select("#tooltip");
+
+            svg.append("g")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x).ticks(5).tickFormat(d3.format(".0%")));
+
+            svg.append("g")
+                .attr("transform", `translate(${margin.left},0)`)
+                .call(d3.axisLeft(y).ticks(8));
+
+            svg.selectAll(".bar")
+                .data(processedData)
+                .enter()
+                .append("rect")
+                .attr("class", "bar")
+                .attr("x", margin.left)
+                .attr("y", d => y(d.NhomHangFull))
+                .attr("width", d => x(d.XacSuat) - margin.left)
+                .attr("height", y.bandwidth())
+                .attr("fill", d => colorScale(d.NhomHangFull))
+                .on("mouseover", function (event, d) {
+                    d3.select(this).attr("opacity", 0.7);
+                    tooltip.transition().duration(200).style("opacity", 1);
+                    tooltip.html(`
+                        <strong>Nhóm hàng:</strong> ${d.NhomHangFull}<br>
+                        <strong>Số đơn hàng:</strong> ${d.SoDonHang.toLocaleString()} SKUs <br>
+                        <strong>Xác suất:</strong> ${(d.XacSuat * 100).toFixed(2)}%
+                    `)
+                        .style("left", (event.pageX + 15) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function () {
+                    d3.select(this).attr("opacity", 1);
+                    tooltip.transition().duration(300).style("opacity", 0);
+                });
+
+            svg.selectAll(".label")
+                .data(processedData)
+                .enter()
+                .append("text")
+                .attr("class", "label")
+                .attr("x", d => x(d.XacSuat) + 5)
+                .attr("y", d => y(d.NhomHangFull) + y.bandwidth() / 2)
+                .attr("dy", "0.35em")
+                .text(d => (d.XacSuat * 100).toFixed(2) + "%");
+        });
+    </script>
+</body>
+</html>
+
